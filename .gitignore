@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch weights and runs
+runs/
+*.pth
+*.pt
+*.onnx
+*.engine
+
+# Temp files and outputs
+_temp_roboflow/
+output_random_test.png
+*.zip
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/

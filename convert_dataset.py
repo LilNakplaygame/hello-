@@ -1,0 +1,271 @@
+import os
+import sys
+import glob
+import json
+import shutil
+import zipfile
+import argparse
+from pathlib import Path
+import cv2
+import numpy as np
+
+CLASS_NAMES = ['obstacle', 'right', 'no_right', 'straight', 'left']
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Convert Roboflow COCO Segmentation dataset to TriLiteNet format")
+    parser.add_argument("--source", type=str, default="", help="Path to Roboflow dataset folder or zip file (leave empty for auto-detect)")
+    parser.add_argument("--target", type=str, default="", help="Target directory for converted dataset (leave empty for auto-detect)")
+    parser.add_argument("--update-config", action="store_true", default=True, help="Update lib/config/default.py with new dataset path")
+    return parser.parse_args()
+
+def auto_detect_source():
+    """Find dataset folder or zip file in Kaggle input or current workspace."""
+    search_patterns = [
+        "/kaggle/input/**/tset*.zip",
+        "/kaggle/input/**/*coco-segmentation*.zip",
+        "/kaggle/input/**/tset*",
+        "/kaggle/input/**/*coco-segmentation*",
+        "./tset*.zip",
+        "../tset*.zip",
+        "./tset*",
+        "../tset*"
+    ]
+    for pattern in search_patterns:
+        matches = glob.glob(pattern, recursive=True)
+        # Filter for directories or zip files
+        valid = [m for m in matches if os.path.isdir(m) or m.endswith('.zip')]
+        if valid:
+            # Pick latest or first valid
+            valid.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+            return valid[0]
+    return None
+
+def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"):
+    """Convert a single split from Roboflow COCO to TriLiteNet (BDD-style) format."""
+    coco_json_path = os.path.join(split_dir, "_annotations.coco.json")
+    if not os.path.exists(coco_json_path):
+        return {}
+
+    with open(coco_json_path, 'r', encoding='utf-8') as f:
+        coco = json.load(f)
+
+    cat_map = {c['id']: c['name'] for c in coco.get('categories', [])}
+    print(f"\n[*] Split '{split_name}' -> Target '{target_split}'")
+    print(f"    Categories: {cat_map}")
+
+    img_id_to_anns = {}
+    for ann in coco.get('annotations', []):
+        img_id = ann['image_id']
+        img_id_to_anns.setdefault(img_id, []).append(ann)
+
+    img_out_dir = os.path.join(out_base_dir, 'images', target_split)
+    det_out_dir = os.path.join(out_base_dir, 'det_annotations', target_split)
+    da_out_dir = os.path.join(out_base_dir, 'da_seg_annotations', target_split)
+    ll_out_dir = os.path.join(out_base_dir, 'll_seg_annotations', target_split)
+
+    for d in [img_out_dir, det_out_dir, da_out_dir, ll_out_dir]:
+        os.makedirs(d, exist_ok=True)
+
+    images = coco.get('images', [])
+    print(f"    Converting {len(images)} images...")
+
+    stats = {
+        'images': 0,
+        'da_masks': 0,
+        'boxes': {c: 0 for c in CLASS_NAMES}
+    }
+
+    for img_info in images:
+        img_id = img_info['id']
+        file_name = img_info['file_name']
+        width = int(img_info['width'])
+        height = int(img_info['height'])
+        stem = Path(file_name).stem
+
+        src_img_path = os.path.join(split_dir, file_name)
+        if not os.path.exists(src_img_path):
+            continue
+
+        # 1. Copy image
+        dst_img_path = os.path.join(img_out_dir, f"{stem}.jpg")
+        shutil.copy2(src_img_path, dst_img_path)
+        stats['images'] += 1
+
+        # 2. Render Drivable Area mask (da_seg)
+        da_mask = np.zeros((height, width), dtype=np.uint8)
+        has_da = False
+        ll_mask = np.zeros((height, width), dtype=np.uint8)
+
+        bdd_objects = []
+        anns = img_id_to_anns.get(img_id, [])
+        for ann in anns:
+            cat_id = ann.get('category_id')
+            cat_name = cat_map.get(cat_id, "").lower().strip()
+
+            # Drivable road surface polygon
+            if any(k in cat_name for k in ['lane', 'road', 'da']):
+                segmentation = ann.get('segmentation', [])
+                for seg in segmentation:
+                    if len(seg) >= 6:
+                        poly = np.array(seg, dtype=np.float32).reshape(-1, 2).astype(np.int32)
+                        cv2.fillPoly(da_mask, [poly], color=255)
+                        has_da = True
+
+            # Object detection bounding box
+            bbox = ann.get('bbox')
+            if bbox and len(bbox) == 4 and cat_name not in ['lane', 'tset']:
+                x, y, w, h = bbox
+                if w <= 0 or h <= 0:
+                    continue
+                x1 = max(0.0, min(float(width), float(x)))
+                y1 = max(0.0, min(float(height), float(y)))
+                x2 = max(0.0, min(float(width), float(x + w)))
+                y2 = max(0.0, min(float(height), float(y + h)))
+                if (x2 - x1) <= 1.0 or (y2 - y1) <= 1.0:
+                    continue
+
+                # 5 Classes Mapping
+                if 'no right' in cat_name or 'no_right' in cat_name:
+                    det_cat = 'no_right'
+                elif 'right' in cat_name:
+                    det_cat = 'right'
+                elif 'straight' in cat_name:
+                    det_cat = 'straight'
+                elif 'left' in cat_name:
+                    det_cat = 'left'
+                else:
+                    det_cat = 'obstacle'
+
+                stats['boxes'][det_cat] += 1
+                bdd_objects.append({
+                    "category": det_cat,
+                    "box2d": {
+                        "x1": round(x1, 2),
+                        "y1": round(y1, 2),
+                        "x2": round(x2, 2),
+                        "y2": round(y2, 2)
+                    },
+                    "raw_name": cat_name
+                })
+
+        if has_da:
+            stats['da_masks'] += 1
+
+        cv2.imwrite(os.path.join(da_out_dir, f"{stem}.png"), da_mask)
+        cv2.imwrite(os.path.join(ll_out_dir, f"{stem}.png"), ll_mask)
+
+        with open(os.path.join(det_out_dir, f"{stem}.json"), 'w', encoding='utf-8') as f:
+            json.dump({"name": f"{stem}.jpg", "frames": [{"objects": bdd_objects}]}, f, indent=2)
+
+    return stats
+
+def update_default_config(dataset_dir, repo_dir):
+    """Automatically update lib/config/default.py with the absolute or relative path to the converted dataset."""
+    cfg_file = os.path.join(repo_dir, "lib", "config", "default.py")
+    if not os.path.exists(cfg_file):
+        return
+
+    # Normalized forward-slash path
+    norm_path = os.path.abspath(dataset_dir).replace('\\', '/')
+    with open(cfg_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Update roots
+    content = content.replace("_C.DATASET.DATAROOT = '../bdd100k/images'", f"_C.DATASET.DATAROOT = '{norm_path}/images'")
+    content = content.replace("_C.DATASET.LABELROOT = '../bdd100k/det_annotations'", f"_C.DATASET.LABELROOT = '{norm_path}/det_annotations'")
+    content = content.replace("_C.DATASET.MASKROOT = '../bdd100k/da_seg_annotations'", f"_C.DATASET.MASKROOT = '{norm_path}/da_seg_annotations'")
+    content = content.replace("_C.DATASET.LANEROOT = '../bdd100k/ll_seg_annotations'", f"_C.DATASET.LANEROOT = '{norm_path}/ll_seg_annotations'")
+
+    with open(cfg_file, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"[+] Updated default.py DATAROOT -> {norm_path}")
+
+def main():
+    args = parse_args()
+    repo_dir = Path(__file__).resolve().parent
+
+    source_path = args.source or auto_detect_source()
+    if not source_path or not os.path.exists(source_path):
+        print("[-] Error: No dataset source found. Please specify with --source <path>")
+        sys.exit(1)
+
+    # Determine target directory
+    if args.target:
+        out_dir = Path(args.target)
+    elif os.path.exists("/kaggle/working"):
+        out_dir = Path("/kaggle/working/dataset_ucr")
+    else:
+        out_dir = repo_dir.parent / "dataset_ucr"
+
+    print("==================================================")
+    print("AUTO DATASET CONVERTER (ROBOFLOW COCO -> TRILITENET)")
+    print(f"Source: {source_path}")
+    print(f"Target: {out_dir}")
+    print(f"Classes: {CLASS_NAMES}")
+    print("==================================================")
+
+    temp_extract = None
+    if zipfile.is_zipfile(source_path):
+        print(f"[*] Detected ZIP archive. Unzipping {source_path}...")
+        temp_extract = repo_dir / "_temp_roboflow"
+        if temp_extract.exists():
+            shutil.rmtree(temp_extract)
+        with zipfile.ZipFile(source_path, 'r') as z:
+            z.extractall(temp_extract)
+        dataset_root = temp_extract
+    else:
+        dataset_root = Path(source_path)
+
+    # Clean existing out_dir
+    if out_dir.exists():
+        print(f"[*] Cleaning old {out_dir}...")
+        shutil.rmtree(out_dir)
+
+    total_stats = {'train': {}, 'val': {}}
+
+    # 1. Process Train
+    train_dir = dataset_root / "train"
+    if train_dir.exists():
+        total_stats['train'] = convert_coco_split(str(train_dir), str(out_dir), "train", target_split="train")
+
+    # 2. Process Valid
+    valid_dir = dataset_root / "valid"
+    if valid_dir.exists():
+        total_stats['val'] = convert_coco_split(str(valid_dir), str(out_dir), "valid", target_split="val")
+
+    # 3. Process Test (merged into val)
+    test_dir = dataset_root / "test"
+    if test_dir.exists():
+        test_stats = convert_coco_split(str(test_dir), str(out_dir), "test", target_split="val")
+        if total_stats['val']:
+            total_stats['val']['images'] += test_stats.get('images', 0)
+            total_stats['val']['da_masks'] += test_stats.get('da_masks', 0)
+            for k in CLASS_NAMES:
+                total_stats['val']['boxes'][k] += test_stats.get('boxes', {}).get(k, 0)
+        else:
+            total_stats['val'] = test_stats
+
+    # Cleanup temp
+    if temp_extract and temp_extract.exists():
+        shutil.rmtree(temp_extract)
+
+    print("\n==================================================")
+    print("[+] SUMMARY STATISTICS:")
+    print("--------------------------------------------------")
+    for split_k in ['train', 'val']:
+        st = total_stats.get(split_k, {})
+        print(f"Split [{split_k.upper()}]:")
+        print(f"  - Images: {st.get('images', 0)}")
+        print(f"  - Drivable surface masks: {st.get('da_masks', 0)}")
+        print(f"  - Bounding boxes per class:")
+        for c, count in st.get('boxes', {}).items():
+            print(f"      * {c:10s}: {count:3d}")
+    print("==================================================")
+
+    if args.update_config:
+        update_default_config(str(out_dir), str(repo_dir))
+
+    print(f"\n[+] Dataset ready for training at: {out_dir}")
+
+if __name__ == "__main__":
+    main()
