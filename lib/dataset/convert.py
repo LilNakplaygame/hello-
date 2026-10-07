@@ -11,11 +11,15 @@
 # 'caravan': 36, 'motorcycle': 37, 'trailer': 38, 'train': 39,
 # 'truck': 40       
 # }
-id_dict = {'person': 0, 'rider': 1, 'car': 2, 'bus': 3, 'truck': 4, 
-'bike': 5, 'motor': 6, 'tl_green': 7, 'tl_red': 8, 
-'tl_yellow': 9, 'tl_none': 10, 'traffic sign': 11, 'train': 12}
-id_dict_single = {'car': 0, 'bus': 1, 'truck': 2,'train': 3}
-# id_dict = {'car': 0, 'bus': 1, 'truck': 2}
+id_dict = {
+    'obstacle': 0, 'obstacles': 0, 'car': 0, 'bus': 0, 'truck': 0,
+    'right': 1,
+    'no_right': 2, 'no right': 2,
+    'straight': 3,
+    'left': 4,
+    'person': 0, 'rider': 0, 'bike': 0, 'motor': 0, 'traffic sign': 1, 'train': 0
+}
+id_dict_single = {'obstacle': 0, 'right': 1, 'no_right': 2, 'straight': 3, 'left': 4}
 
 def convert(size, box):
     dw = 1./(size[0])

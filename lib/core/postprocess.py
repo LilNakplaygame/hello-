@@ -141,7 +141,7 @@ def find_3_positive(p, targets, det, cfg):
 
         # Append
         a = t[:, 6].long()  # anchor indices
-        indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
+        indices.append((b, a, gj.clamp_(0, (gain[3] - 1).long()), gi.clamp_(0, (gain[2] - 1).long())))  # image, anchor, grid indices
         anch.append(anchors[a])  # anchors
 
     return indices, anch
@@ -365,7 +365,7 @@ def build_targets(cfg, predictions, targets, model):
 
         # Append
         a = t[:, 6].long()  # anchor indices
-        indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
+        indices.append((b, a, gj.clamp_(0, (gain[3] - 1).long()), gi.clamp_(0, (gain[2] - 1).long())))  # image, anchor, grid indices
         tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
         anch.append(anchors[a])  # anchors
         tcls.append(c)  # class

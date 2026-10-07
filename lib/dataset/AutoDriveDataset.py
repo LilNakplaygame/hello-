@@ -158,9 +158,8 @@ class AutoDriveDataset(Dataset):
                 labels[:, [2, 4]] /= img.shape[0]  # height
                 labels[:, [1, 3]] /= img.shape[1]  # width
 
-            # if self.is_train:
             # random left-right flip
-            lr_flip = True
+            lr_flip = False
             if lr_flip and random.random() < 0.5:
                 img = np.fliplr(img)
                 seg_label = np.fliplr(seg_label)

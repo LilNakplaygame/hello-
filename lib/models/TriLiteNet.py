@@ -14,12 +14,15 @@ from lib.utils.utils import time_synchronized
 
 
 
-def TriLiteNet(model_cfg):
+DET_CLASS_NAMES = ['obstacle', 'right', 'no_right', 'straight', 'left']
+
+
+def TriLiteNet(model_cfg, nc=5):
     TriLiteNet = [
         [2, 4, 5],   #Det_out_idx, Da_Segout_idx, LL_Segout_idx
         [ -1, Encoder, [model_cfg]],   #0         /2
         [ -1, DetectHead, [model_cfg]],   #1         
-        [ -1, Detect,  [1, [[4,12,7,19,11,28], [17,40,25,58,38,89], [62,136,88,206,124,412]], [model_cfg['chanels'][3], model_cfg['chanels'][3], model_cfg['chanels'][3]]]], #2
+        [ -1, Detect,  [nc, [[4,12,7,19,11,28], [17,40,25,58,38,89], [62,136,88,206,124,412]], [model_cfg['chanels'][3], model_cfg['chanels'][3], model_cfg['chanels'][3]]]], #2
         [ 0, SegmentHead, [model_cfg]], #3
         [ 3, UpSimpleBlock, [model_cfg['chanels'][0], 2]],  #4
         [ 3, UpSimpleBlock, [model_cfg['chanels'][0], 2]],   #5
@@ -32,7 +35,7 @@ class MultiTaskModel(nn.Module):
     def __init__(self, block_cfg, **kwargs):
         super(MultiTaskModel, self).__init__()
         layers, save= [], []
-        self.nc = 1
+        self.nc = 5
         self.detector_index = -1
         self.seg_da_idx = block_cfg[0][1]
         self.seg_ll_idx = block_cfg[0][2]
@@ -50,7 +53,10 @@ class MultiTaskModel(nn.Module):
         assert self.detector_index == block_cfg[0][0]
 
         self.model, self.save = nn.Sequential(*layers), sorted(save)
-        self.names = [str(i) for i in range(self.nc)]
+        Detector = self.model[self.detector_index]  # detector
+        if isinstance(Detector, Detect):
+            self.nc = Detector.nc
+        self.names = DET_CLASS_NAMES if self.nc == len(DET_CLASS_NAMES) else [str(i) for i in range(self.nc)]
 
         # set stride、anchor for detector
         Detector = self.model[self.detector_index]  # detector
@@ -107,7 +113,8 @@ class MultiTaskModel(nn.Module):
 
 def get_net(cfg, **kwargs): 
     model_cfg = sc_ch_dict[cfg.config]
-    m_block_cfg = TriLiteNet(model_cfg)
+    nc = getattr(cfg, 'num_det_class', 5) if hasattr(cfg, 'num_det_class') else 5
+    m_block_cfg = TriLiteNet(model_cfg, nc=nc)
  
     model = MultiTaskModel(m_block_cfg, **kwargs)
     return model

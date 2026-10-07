@@ -78,7 +78,7 @@ def main():
     model = model.to(device)
     # model.half()
     model.gr = 1.0
-    model.nc = 1
+    model.nc = getattr(cfg, 'num_det_class', 5)
     print('bulid model finished')
 
     print("begin to load data")
