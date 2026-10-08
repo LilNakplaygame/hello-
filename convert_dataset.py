@@ -20,24 +20,30 @@ def parse_args():
 
 def auto_detect_source():
     """Find dataset folder or zip file in Kaggle input or current workspace."""
-    search_patterns = [
-        "/kaggle/input/**/tset*.zip",
-        "/kaggle/input/**/*coco-segmentation*.zip",
-        "/kaggle/input/**/tset*",
-        "/kaggle/input/**/*coco-segmentation*",
-        "./tset*.zip",
-        "../tset*.zip",
-        "./tset*",
-        "../tset*"
-    ]
-    for pattern in search_patterns:
-        matches = glob.glob(pattern, recursive=True)
-        # Filter for directories or zip files
-        valid = [m for m in matches if os.path.isdir(m) or m.endswith('.zip')]
-        if valid:
-            # Pick latest or first valid
-            valid.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-            return valid[0]
+    candidates = []
+    
+    # 1. Search for any Roboflow COCO annotations in /kaggle/input or local
+    search_dirs = ["/kaggle/input/**/_annotations.coco.json", "./**/_annotations.coco.json", "../**/_annotations.coco.json"]
+    for pattern in search_dirs:
+        for ann_file in glob.glob(pattern, recursive=True):
+            p = Path(ann_file).parent
+            # If inside train/valid/test split, dataset root is the parent folder
+            root = p.parent if p.name in ['train', 'valid', 'val', 'test'] else p
+            if str(root) not in [str(c) for c in candidates]:
+                candidates.append(root)
+
+    # 2. Search for any uploaded zip files (excluding trilitenet source code zips)
+    for pattern in ["/kaggle/input/**/*.zip", "./*.zip", "../*.zip"]:
+        for z in glob.glob(pattern, recursive=True):
+            z_name = os.path.basename(z).lower()
+            if 'trilite' not in z_name and 'checkpoint' not in z_name:
+                zp = Path(z)
+                if str(zp) not in [str(c) for c in candidates]:
+                    candidates.append(zp)
+
+    if candidates:
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return str(candidates[0])
     return None
 
 def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"):
