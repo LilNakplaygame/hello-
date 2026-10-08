@@ -74,8 +74,12 @@ def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"
         coco = json.load(f)
 
     cat_map = {c['id']: c['name'] for c in coco.get('categories', [])}
+    valid_cats = {k: v for k, v in cat_map.items() if 'tset' not in v.lower() and 'test' not in v.lower()}
     print(f"\n[*] Split '{split_name}' -> Target '{target_split}'")
-    print(f"    Categories: {cat_map}")
+    print(f"    Raw categories: {cat_map}")
+    if len(valid_cats) != len(cat_map):
+        print(f"    [!] Ignored invalid/test classes: {[v for v in cat_map.values() if v not in valid_cats.values()]}")
+    print(f"    Active categories: {list(valid_cats.values())}")
 
     img_id_to_anns = {}
     for ann in coco.get('annotations', []):
@@ -126,6 +130,10 @@ def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"
             cat_id = ann.get('category_id')
             cat_name = cat_map.get(cat_id, "").lower().strip()
 
+            # Skip dummy / corrupted / mistaken class 'tset' or 'test'
+            if 'tset' in cat_name or 'test' in cat_name:
+                continue
+
             # Drivable road surface polygon
             if any(k in cat_name for k in ['lane', 'road', 'da']):
                 segmentation = ann.get('segmentation', [])
@@ -135,9 +143,9 @@ def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"
                         cv2.fillPoly(da_mask, [poly], color=255)
                         has_da = True
 
-            # Object detection bounding box
+            # Object detection bounding box (skip road surface classes)
             bbox = ann.get('bbox')
-            if bbox and len(bbox) == 4 and cat_name not in ['lane', 'tset']:
+            if bbox and len(bbox) == 4 and not any(k in cat_name for k in ['lane', 'road', 'da']):
                 x, y, w, h = bbox
                 if w <= 0 or h <= 0:
                     continue
@@ -159,8 +167,11 @@ def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"
                     det_cat = 'straight'
                 elif 'left' in cat_name:
                     det_cat = 'left'
-                else:
+                elif any(o in cat_name for o in ['obs', 'car', 'truck', 'bus', 'box', 'barrier', 'vehicle', 'vatcan']):
                     det_cat = 'obstacle'
+                else:
+                    # Ignore any other unrecognized labels
+                    continue
 
                 stats['boxes'][det_cat] += 1
                 bdd_objects.append({
