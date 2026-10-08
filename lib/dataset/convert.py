@@ -17,9 +17,10 @@ id_dict = {
     'no_right': 2, 'no right': 2,
     'straight': 3,
     'left': 4,
+    'no_left': 5, 'no left': 5,
     'person': 0, 'rider': 0, 'bike': 0, 'motor': 0, 'traffic sign': 1, 'train': 0
 }
-id_dict_single = {'obstacle': 0, 'right': 1, 'no_right': 2, 'straight': 3, 'left': 4}
+id_dict_single = {'obstacle': 0, 'right': 1, 'no_right': 2, 'straight': 3, 'left': 4, 'no_left': 5}
 
 def convert(size, box):
     dw = 1./(size[0])

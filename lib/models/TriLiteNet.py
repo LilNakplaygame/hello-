@@ -14,10 +14,10 @@ from lib.utils.utils import time_synchronized
 
 
 
-DET_CLASS_NAMES = ['obstacle', 'right', 'no_right', 'straight', 'left']
+DET_CLASS_NAMES = ['obstacle', 'right', 'no_right', 'straight', 'left', 'no_left']
 
 
-def TriLiteNet(model_cfg, nc=5):
+def TriLiteNet(model_cfg, nc=6):
     TriLiteNet = [
         [2, 4, 5],   #Det_out_idx, Da_Segout_idx, LL_Segout_idx
         [ -1, Encoder, [model_cfg]],   #0         /2
@@ -35,7 +35,7 @@ class MultiTaskModel(nn.Module):
     def __init__(self, block_cfg, **kwargs):
         super(MultiTaskModel, self).__init__()
         layers, save= [], []
-        self.nc = 5
+        self.nc = 6
         self.detector_index = -1
         self.seg_da_idx = block_cfg[0][1]
         self.seg_ll_idx = block_cfg[0][2]
@@ -113,7 +113,7 @@ class MultiTaskModel(nn.Module):
 
 def get_net(cfg, **kwargs): 
     model_cfg = sc_ch_dict[cfg.config]
-    nc = getattr(cfg, 'num_det_class', 5) if hasattr(cfg, 'num_det_class') else 5
+    nc = getattr(cfg, 'num_det_class', 6) if hasattr(cfg, 'num_det_class') else 6
     m_block_cfg = TriLiteNet(model_cfg, nc=nc)
  
     model = MultiTaskModel(m_block_cfg, **kwargs)

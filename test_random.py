@@ -8,13 +8,14 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-CLASS_NAMES = ["Obstacle", "Right", "No_Right", "Straight", "Left"]
+CLASS_NAMES = ["Obstacle", "Right", "No_Right", "Straight", "Left", "No_Left"]
 CLASS_COLORS = [
     (255, 0, 0),     # Đỏ: Vật cản (Obstacle)
     (0, 140, 255),   # Xanh dương: Biển Rẽ Phải (Right)
-    (255, 200, 0),   # Vàng cam: Biển Cấm Rẽ (No_Right)
+    (255, 200, 0),   # Vàng cam: Biển Cấm Rẽ Phải (No_Right)
     (0, 255, 255),   # Xanh lơ (Cyan): Biển Đi Thẳng (Straight)
-    (255, 0, 255)    # Tím hồng: Biển Rẽ Trái (Left)
+    (255, 0, 255),   # Tím hồng: Biển Rẽ Trái (Left)
+    (255, 100, 0)    # Cam đậm: Biển Cấm Rẽ Trái (No_Left)
 ]
 
 def parse_args():
@@ -87,7 +88,7 @@ def run_random_test(weights=None, config="small", num_samples=5, conf_thres=0.25
 
     # Set config
     cfg.config = config
-    cfg.num_det_class = 5
+    cfg.num_det_class = 6
     model = get_net(cfg).to(device)
 
     # Resolve checkpoint

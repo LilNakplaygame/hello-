@@ -201,7 +201,7 @@ def main():
 
     # assign model params
     model.gr = 1.0
-    model.nc = getattr(cfg, 'num_det_class', 5)
+    model.nc = getattr(cfg, 'num_det_class', 6)
     # print('bulid model finished')
 
     ema = ModelEMA(model)

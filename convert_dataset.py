@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CLASS_NAMES = ['obstacle', 'right', 'no_right', 'straight', 'left']
+CLASS_NAMES = ['obstacle', 'right', 'no_right', 'straight', 'left', 'no_left']
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Convert Roboflow COCO Segmentation dataset to TriLiteNet format")
@@ -148,9 +148,11 @@ def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"
                 if (x2 - x1) <= 1.0 or (y2 - y1) <= 1.0:
                     continue
 
-                # 5 Classes Mapping
+                # 6 Classes Mapping
                 if 'no right' in cat_name or 'no_right' in cat_name:
                     det_cat = 'no_right'
+                elif 'no left' in cat_name or 'no_left' in cat_name:
+                    det_cat = 'no_left'
                 elif 'right' in cat_name:
                     det_cat = 'right'
                 elif 'straight' in cat_name:

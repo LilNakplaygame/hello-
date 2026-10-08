@@ -14,7 +14,7 @@ _C.AUTO_RESUME = False
 _C.NEED_AUTOANCHOR = True
 _C.DEBUG = False
 _C.num_seg_class = 2
-_C.num_det_class = 5
+_C.num_det_class = 6
 
 # Cudnn related params
 _C.CUDNN = CN()
