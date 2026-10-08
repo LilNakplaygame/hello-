@@ -76,10 +76,10 @@ def convert_coco_split(split_dir, out_base_dir, split_name, target_split="train"
     cat_map = {c['id']: c['name'] for c in coco.get('categories', [])}
     valid_cats = {k: v for k, v in cat_map.items() if 'tset' not in v.lower() and 'test' not in v.lower()}
     print(f"\n[*] Split '{split_name}' -> Target '{target_split}'")
-    print(f"    Raw categories: {cat_map}")
-    if len(valid_cats) != len(cat_map):
-        print(f"    [!] Ignored invalid/test classes: {[v for v in cat_map.values() if v not in valid_cats.values()]}")
-    print(f"    Active categories: {list(valid_cats.values())}")
+    ignored = [v for v in cat_map.values() if v not in valid_cats.values()]
+    if ignored:
+        print(f"    [-] Excluded unneeded/test classes from Roboflow: {ignored}")
+    print(f"    [+] Valid dataset classes used: {list(valid_cats.values())}")
 
     img_id_to_anns = {}
     for ann in coco.get('annotations', []):
