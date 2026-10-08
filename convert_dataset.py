@@ -23,26 +23,44 @@ def auto_detect_source():
     candidates = []
     
     # 1. Search for any Roboflow COCO annotations in /kaggle/input or local
-    search_dirs = ["/kaggle/input/**/_annotations.coco.json", "./**/_annotations.coco.json", "../**/_annotations.coco.json"]
+    search_dirs = [
+        "/kaggle/input/**/_annotations.coco.json",
+        "./**/_annotations.coco.json",
+        "../**/_annotations.coco.json"
+    ]
     for pattern in search_dirs:
         for ann_file in glob.glob(pattern, recursive=True):
             p = Path(ann_file).parent
-            # If inside train/valid/test split, dataset root is the parent folder
             root = p.parent if p.name in ['train', 'valid', 'val', 'test'] else p
-            if str(root) not in [str(c) for c in candidates]:
+            if root not in candidates:
                 candidates.append(root)
 
-    # 2. Search for any uploaded zip files (excluding trilitenet source code zips)
+    # 2. Search for any folder with a 'train' subdirectory in /kaggle/input
+    for train_dir in glob.glob("/kaggle/input/**/train", recursive=True):
+        p = Path(train_dir).parent
+        if p not in candidates and p != Path("/kaggle/input"):
+            candidates.append(p)
+
+    # 3. Direct subdirectories in /kaggle/input
+    if os.path.exists("/kaggle/input"):
+        for sub in os.listdir("/kaggle/input"):
+            full_p = Path("/kaggle/input") / sub
+            if full_p.is_dir() and full_p not in candidates:
+                if (full_p / "train").exists():
+                    candidates.insert(0, full_p)
+                else:
+                    candidates.append(full_p)
+
+    # 4. Search for any uploaded zip files
     for pattern in ["/kaggle/input/**/*.zip", "./*.zip", "../*.zip"]:
         for z in glob.glob(pattern, recursive=True):
             z_name = os.path.basename(z).lower()
             if 'trilite' not in z_name and 'checkpoint' not in z_name:
                 zp = Path(z)
-                if str(zp) not in [str(c) for c in candidates]:
+                if zp not in candidates:
                     candidates.append(zp)
 
     if candidates:
-        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         return str(candidates[0])
     return None
 
@@ -171,12 +189,10 @@ def update_default_config(dataset_dir, repo_dir):
     if not os.path.exists(cfg_file):
         return
 
-    # Normalized forward-slash path
     norm_path = os.path.abspath(dataset_dir).replace('\\', '/')
     with open(cfg_file, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Update roots
     content = content.replace("_C.DATASET.DATAROOT = '../bdd100k/images'", f"_C.DATASET.DATAROOT = '{norm_path}/images'")
     content = content.replace("_C.DATASET.LABELROOT = '../bdd100k/det_annotations'", f"_C.DATASET.LABELROOT = '{norm_path}/det_annotations'")
     content = content.replace("_C.DATASET.MASKROOT = '../bdd100k/da_seg_annotations'", f"_C.DATASET.MASKROOT = '{norm_path}/da_seg_annotations'")
@@ -190,9 +206,29 @@ def main():
     args = parse_args()
     repo_dir = Path(__file__).resolve().parent
 
-    source_path = args.source or auto_detect_source()
+    source_path = None
+    if args.source:
+        if os.path.exists(args.source):
+            source_path = args.source
+        else:
+            print(f"[-] Warning: Specified source '{args.source}' was not found directly.")
+            # Search for partial match in /kaggle/input
+            term = os.path.basename(args.source.rstrip('/\\'))
+            matches = glob.glob(f"/kaggle/input/**/*{term}*", recursive=True)
+            if matches:
+                source_path = matches[0]
+                print(f"[+] Found match: {source_path}")
+
+    if not source_path:
+        source_path = auto_detect_source()
+
     if not source_path or not os.path.exists(source_path):
-        print("[-] Error: No dataset source found. Please specify with --source <path>")
+        print("[-] Error: No dataset source found.")
+        if os.path.exists("/kaggle/input"):
+            print(f"[*] Available items in /kaggle/input:")
+            for item in os.listdir("/kaggle/input"):
+                full_item = os.path.join("/kaggle/input", item)
+                print(f"    - {item} ({'DIR' if os.path.isdir(full_item) else 'FILE'})")
         sys.exit(1)
 
     # Determine target directory
@@ -221,6 +257,11 @@ def main():
         dataset_root = temp_extract
     else:
         dataset_root = Path(source_path)
+
+    # If dataset_root has a single child directory that contains train/
+    subdirs = [d for d in dataset_root.iterdir() if d.is_dir() and d.name != '_temp_roboflow']
+    if not (dataset_root / "train").exists() and len(subdirs) == 1 and (subdirs[0] / "train").exists():
+        dataset_root = subdirs[0]
 
     # Clean existing out_dir
     if out_dir.exists():
